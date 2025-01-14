@@ -1,4 +1,5 @@
 import os
+import time
 
 in_progress_statuses = [
     "CREATE_IN_PROGRESS",
