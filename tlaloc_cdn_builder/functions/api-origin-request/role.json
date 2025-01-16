@@ -1,0 +1,62 @@
+{
+    "Type": "AWS::IAM::Role",
+    "Properties": {
+        "AssumeRolePolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {
+                        "Service": [
+                            "lambda.amazonaws.com",
+                            "edgelambda.amazonaws.com"
+                        ]
+                    },
+                    "Action": "sts:AssumeRole"
+                }
+            ]
+        },
+        "Policies": [
+            {
+                "PolicyName": "LambdaExecutionPolicy",
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "logs:CreateLogGroup",
+                                "logs:CreateLogStream",
+                                "logs:PutLogEvents"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "dynamodb:Query"
+                            ],
+                            "Resource": [
+                                {
+                                    "Fn::Sub": "arn:aws:dynamodb:sa-east-1:${AWS::AccountId}:table/${parTablePermissions}/index/sub-index"
+                                },
+                                {
+                                    "Fn::Sub": "arn:aws:dynamodb:sa-east-1:${AWS::AccountId}:table/${parTablePermissions}/index/group-index"
+                                }
+                            ]
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "sqs:SendMessage"
+                            ],
+                            "Resource": {
+                                "Fn::Sub": "arn:aws:sqs:sa-east-1:${AWS::AccountId}:${parQueueAccessLog}"
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+}

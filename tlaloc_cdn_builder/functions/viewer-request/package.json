@@ -1,0 +1,14 @@
+{
+  "name": "common-viewer-request",
+  "version": "1.0.0",
+  "description": "",
+  "main": "common-viewer-request.mjs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "aws-jwt-verify": "^4.0.1"
+  }
+}

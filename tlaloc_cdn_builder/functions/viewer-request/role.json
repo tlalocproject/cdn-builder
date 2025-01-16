@@ -1,0 +1,57 @@
+{
+    "Type": "AWS::IAM::Role",
+    "Properties": {
+        "AssumeRolePolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {
+                        "Service": [
+                            "lambda.amazonaws.com",
+                            "edgelambda.amazonaws.com"
+                        ]
+                    },
+                    "Action": "sts:AssumeRole"
+                }
+            ]
+        },
+        "Policies": [
+            {
+                "PolicyName": "LambdaExecutionPolicy",
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "logs:CreateLogGroup",
+                                "logs:CreateLogStream",
+                                "logs:PutLogEvents"
+                            ],
+                            "Resource": "*"
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "cognito-idp:AdminGetUser"
+                            ],
+                            "Resource": {
+                                "Fn::Sub": "arn:aws:cognito-idp:sa-east-1:${AWS::AccountId}:userpool/${parUserPoolId}"
+                            }
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "dynamodb:GetItem"
+                            ],
+                            "Resource": {
+                                "Fn::Sub": "arn:aws:dynamodb:sa-east-1:${AWS::AccountId}:table/${parTablePermissions}"
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+}
