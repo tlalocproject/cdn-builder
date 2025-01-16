@@ -203,6 +203,8 @@ class builder:
 
     def build(self):
 
+        # Initialization ##########################################################
+
         # Reporting the configuration in use
         print(
             "Building CDN with config:\n    {}".format(
@@ -236,60 +238,13 @@ class builder:
             "Outputs": {},
         }
 
-        # Adding domain certificate resource
-        stack["Resources"]["domainCertificate"] = {
-            "Type": "AWS::CertificateManager::Certificate",
-            "Properties": {
-                "DomainName": self.config["aws_domain"],
-                "DomainValidationOptions": [
-                    {
-                        "DomainName": self.config["aws_domain"],
-                        "HostedZoneId": self.config["aws_hosted_zone_id"],
-                    }
-                ],
-                "ValidationMethod": "DNS",
-            },
-        }
-
-        # Adding logs bucket
-        stack["Resources"]["bucketCloudFrontLogs"] = {
-            "Type": "AWS::S3::Bucket",
-            "Properties": {
-                "BucketName": f"{self.config["aws_stack"]}-cloudfront-logs",
-                "OwnershipControls": {
-                    "Rules": [{"ObjectOwnership": "BucketOwnerPreferred"}]
-                },
-            },
-        }
-
-        # Adding policy for logs bucket
-        stack["Resources"]["bucketCloudFrontLogsPolicy"] = {
-            "Type": "AWS::S3::BucketPolicy",
-            "Properties": {
-                "Bucket": {"Ref": "bucketCloudFrontLogs"},
-                "PolicyDocument": {
-                    "Statement": [
-                        {
-                            "Action": "s3:PutObject",
-                            "Effect": "Allow",
-                            "Resource": {"Fn::Sub": "${bucketCloudFrontLogs.Arn}/*"},
-                            "Principal": {"Service": "cloudfront.amazonaws.com"},
-                            "Condition": {
-                                "StringEquals": {
-                                    "AWS:SourceArn": {
-                                        "Fn::Sub": "arn:aws:cloudfront::${AWS::AccountId}:distribution/asdf" #${cloudFrontDistribution}"
-                                    }
-                                }
-                            },
-                        }
-                    ]
-                },
-            },
-        }
+        # Functions ##############################################################
 
         for function in edge_functions:
 
             # Calculating function variable values
+            edge_functions[function]["name"] = function
+            function = edge_functions[function]
             function_hash = self._get_hash(
                 f"{self.config["aws_stack"]}-{function["name"]}"
             )
@@ -361,6 +316,273 @@ class builder:
                     "FunctionName": {"Ref": f"{function_hash}Function"},
                 },
             }
+            function["version"] = f"{function_hash}FunctionVersion{function_timestamp}"
+
+        # Distribution ############################################################
+
+        # Adding domain certificate resource
+        stack["Resources"]["domainCertificate"] = {
+            "Type": "AWS::CertificateManager::Certificate",
+            "Properties": {
+                "DomainName": self.config["aws_domain"],
+                "DomainValidationOptions": [
+                    {
+                        "DomainName": self.config["aws_domain"],
+                        "HostedZoneId": self.config["aws_hosted_zone_id"],
+                    }
+                ],
+                "ValidationMethod": "DNS",
+            },
+        }
+
+        # Adding logs bucket
+        stack["Resources"]["bucketCloudFrontLogs"] = {
+            "Type": "AWS::S3::Bucket",
+            "Properties": {
+                "BucketName": f"{self.config["aws_stack"]}-cloudfront-logs",
+                "OwnershipControls": {
+                    "Rules": [{"ObjectOwnership": "BucketOwnerPreferred"}]
+                },
+            },
+        }
+
+        # Adding policy for logs bucket
+        stack["Resources"]["bucketCloudFrontLogsPolicy"] = {
+            "Type": "AWS::S3::BucketPolicy",
+            "Properties": {
+                "Bucket": {"Ref": "bucketCloudFrontLogs"},
+                "PolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": "s3:PutObject",
+                            "Effect": "Allow",
+                            "Resource": {"Fn::Sub": "${bucketCloudFrontLogs.Arn}/*"},
+                            "Principal": {"Service": "cloudfront.amazonaws.com"},
+                            "Condition": {
+                                "StringEquals": {
+                                    "AWS:SourceArn": {
+                                        "Fn::Sub": "arn:aws:cloudfront::${AWS::AccountId}:distribution/asdf"
+                                    }
+                                }
+                            },  # ${cloudFrontDistribution}"
+                        }
+                    ]
+                },
+            },
+        }
+
+        stack["Resources"]["cloudFrontDistribution"] = {
+            "Type": "AWS::CloudFront::Distribution",
+            "DependsOn": ["bucketCloudFrontLogs"],
+            "Properties": {
+                "DistributionConfig": {
+                    "Origins": [],
+                    "Enabled": True,
+                    "DefaultRootObject": "index.html",
+                    "CacheBehaviors": [],
+                    "HttpVersion": "http2",
+                    "IPV6Enabled": True,
+                    "Aliases": [
+                        self.config["aws_domain"],
+                    ],
+                    "Logging": {
+                        "Bucket": {"Fn::GetAtt": ["bucketCloudFrontLogs", "DomainName"]}
+                    },
+                    "DefaultRootObject": "index.html",
+                    "PriceClass": "PriceClass_All",
+                    "ViewerCertificate": {
+                        "AcmCertificateArn": {"Ref": "domainCertificate"},
+                        "MinimumProtocolVersion": "TLSv1.2_2021",
+                        "SslSupportMethod": "sni-only",
+                    },
+                }
+            },
+        }
+
+        stack["Resources"]["cloudFrontOriginAccessControl"] = {
+            "Type": "AWS::CloudFront::OriginAccessControl",
+            "Properties": {
+                "OriginAccessControlConfig": {
+                    "Name": f"{self.config["aws_stack"]}-cloudfront-oac",
+                    "OriginAccessControlOriginType": "s3",
+                    "SigningBehavior": "always",
+                    "SigningProtocol": "sigv4",
+                }
+            },
+        }
+
+        stack["Resources"]["cloudFrontDistributionDNSRecord"] = {
+            "Type": "AWS::Route53::RecordSet",
+            "Properties": {
+                "HostedZoneId": self.config["aws_hosted_zone_id"],
+                "Name": self.config["aws_domain"],
+                "Type": "CNAME",
+                "TTL": "300",
+                "ResourceRecords": [
+                    {"Fn::GetAtt": ["cloudFrontDistribution", "DomainName"]}
+                ],
+            },
+        }
+
+        # Origins #################################################################
+
+        origin_id = 0
+        for origin in self.config["aws_origins"]:
+
+            if origin["type"] == "s3":
+                if origin["owner"] == "self":
+                    stack["Resources"][f"distributionOrigin{origin_id:03}Bucket"] = {
+                        "Type": "AWS::S3::Bucket",
+                        "Properties": {
+                            "BucketName": {
+                                "Fn::Sub": origin["name"],
+                            }
+                        },
+                    }
+                    stack["Resources"][
+                        f"distributionOrigin{origin_id:03}BucketPolicy"
+                    ] = {
+                        "Type": "AWS::S3::BucketPolicy",
+                        "Properties": {
+                            "Bucket": {
+                                "Ref": f"distributionOrigin{origin_id:03}Bucket"
+                            },
+                            "PolicyDocument": {
+                                "Statement": [
+                                    {
+                                        "Action": "s3:GetObject",
+                                        "Effect": "Allow",
+                                        "Resource": {
+                                            "Fn::Sub": f"${{{f"distributionOrigin{origin_id:03}Bucket"}.Arn}}/*"
+                                        },
+                                        "Principal": {
+                                            "Service": "cloudfront.amazonaws.com"
+                                        },
+                                        "Condition": {
+                                            "StringEquals": {
+                                                "AWS:SourceArn": {
+                                                    "Fn::Sub": "arn:aws:cloudfront::${AWS::AccountId}:distribution/${cloudFrontDistribution}"
+                                                }
+                                            }
+                                        },
+                                    }
+                                ]
+                            },
+                        },
+                    }
+                    stack["Resources"]["cloudFrontDistribution"]["Properties"][
+                        "DistributionConfig"
+                    ]["Origins"].append(
+                        {
+                            "Id": f"distributionOrigin{origin_id:03}Bucket",
+                            "DomainName": {
+                                "Fn::GetAtt": [
+                                    f"distributionOrigin{origin_id:03}Bucket",
+                                    "RegionalDomainName",
+                                ]
+                            },
+                            "S3OriginConfig": {"OriginAccessIdentity": ""},
+                            "OriginAccessControlId": {
+                                "Fn::GetAtt": ["cloudFrontOriginAccessControl", "Id"]
+                            },
+                        }
+                    )
+                    stack["Resources"]["cloudFrontDistribution"]["DependsOn"].append(
+                        f"distributionOrigin{origin_id:03}Bucket"
+                    )
+                else:
+                    raise ValueError("Invalid origin owner")
+            elif origin["type"] == "apigateway":
+                stack["Resources"]["cloudFrontDistribution"]["Properties"][
+                    "DistributionConfig"
+                ]["Origins"].append(
+                    {
+                        "Id": f"distributionOrigin{origin_id:03}Api",
+                        "DomainName": origin["domain_name"],
+                        "CustomOriginConfig": {
+                            "HTTPPort": 80,
+                            "HTTPSPort": 443,
+                            "OriginProtocolPolicy": "https-only",
+                        },
+                    }
+                )
+                stack["Resources"]["cloudFrontDistribution"]["Properties"][
+                    "DistributionConfig"
+                ]["CacheBehaviors"].append(
+                    {
+                        "TargetOriginId": f"distributionOrigin{origin_id:03}Api",
+                        "PathPattern": origin["mask"],
+                        "Compress": False,
+                        "ViewerProtocolPolicy": "https-only",
+                        "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+                        "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+                        "AllowedMethods": [
+                            "GET",
+                            "HEAD",
+                            "OPTIONS",
+                            "PUT",
+                            "PATCH",
+                            "POST",
+                            "DELETE",
+                        ],
+                        "LambdaFunctionAssociations": [
+                            {
+                                "EventType": "viewer-request",
+                                "LambdaFunctionARN": {
+                                    "Fn::Sub": f'${{{edge_functions["viewer-request"]["version"]}.FunctionArn}}'
+                                },
+                                "IncludeBody": True,
+                            },
+                            {
+                                "EventType": "origin-request",
+                                "LambdaFunctionARN": {
+                                    "Fn::Sub": f'${{{edge_functions["api-origin-request"]["version"]}.FunctionArn}}'
+                                },
+                                "IncludeBody": True,
+                            },
+                            {
+                                "EventType": "origin-response",
+                                "LambdaFunctionARN": {
+                                    "Fn::Sub": f'${{{edge_functions["api-origin-response"]["version"]}.FunctionArn}}'
+                                },
+                            },
+                        ],
+                    }
+                )
+
+            if "default" in origin and origin["default"]:
+                if origin["type"] == "s3":
+                    stack["Resources"]["cloudFrontDistribution"]["Properties"][
+                        "DistributionConfig"
+                    ]["DefaultCacheBehavior"] = {
+                        "TargetOriginId": f"distributionOrigin{origin_id:03}Bucket",
+                        "Compress": True,
+                        "ViewerProtocolPolicy": "redirect-to-https",
+                        "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+                        "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
+                        "LambdaFunctionAssociations": [
+                            {
+                                "EventType": "viewer-request",
+                                "LambdaFunctionARN": {
+                                    "Fn::Sub": f'${{{edge_functions["viewer-request"]["version"]}.FunctionArn}}'
+                                },
+                                "IncludeBody": True,
+                            },
+                            {
+                                "EventType": "origin-request",
+                                "LambdaFunctionARN": {
+                                    "Fn::GetAtt": [
+                                        edge_functions["s3-origin-request"]["version"],
+                                        "FunctionArn",
+                                    ]
+                                },
+                                "IncludeBody": True,
+                            },
+                        ],
+                    }
+            origin_id += 1
+
+        # Dump ####################################################################
 
         # Save stack
         print("Saving stack")
