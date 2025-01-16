@@ -50,32 +50,28 @@ rollback_statuses = [
 special_cases = ["DELETE_IN_PROGRESS", "DELETE_COMPLETE", "DELETE_FAILED"]
 
 # Adding functions resources
-edge_functions = [
-    {
-        "name": "viewer-request",
+edge_functions = {
+    "viewer-request": {
         "memory": 128,
         "timeout": 5,
         "runtime": "nodejs20.x",
     },
-    {
-        "name": "api-origin-request",
+    "api-origin-request": {
         "memory": 128,
         "timeout": 5,
         "runtime": "nodejs20.x",
     },
-    {
-        "name": "s3-origin-request",
+    "s3-origin-request": {
         "memory": 128,
         "timeout": 5,
         "runtime": "nodejs20.x",
     },
-    {
-        "name": "api-origin-response",
+    "api-origin-response": {
         "memory": 128,
         "timeout": 5,
         "runtime": "nodejs20.x",
     },
-]
+}
 
 
 class builder:
