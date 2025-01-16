@@ -186,6 +186,17 @@ class builder:
                 )
             self.config["aws_hosted_zone_id"] = config["aws_hosted_zone_id"]
 
+            # Checking the aws_origins parameter
+            if (
+                not config.get("aws_origins")
+                or not isinstance(config["aws_origins"], list)
+                or not config["aws_origins"]
+            ):
+                raise ValueError(
+                    "Config must be a non empty list parameter aws_origins"
+                )
+            self.config["aws_origins"] = config["aws_origins"]
+
         else:
 
             raise ValueError("Invalid provider")
