@@ -630,7 +630,7 @@ class builder:
             ),
         )
 
-    def deploy(self):
+    def deploy(self, wait=False):
         """
         This function deploys the CDN using the provider specified in the config
 
@@ -651,7 +651,7 @@ class builder:
 
         if self.config["provider"] == "aws":
 
-            self._aws_deploy()
+            self._aws_deploy(wait)
 
         else:
 
@@ -660,7 +660,7 @@ class builder:
         # Set the deployed flag to True
         self.deployed = True
 
-    def _aws_deploy(self):
+    def _aws_deploy(self, wait=False):
         """
         This function deploys an AWS CDN using the CloudFormation template and files created by build
 
@@ -682,6 +682,11 @@ class builder:
         print("Deploying stack")
         print(json.dumps(self.config, indent=4))
         commons.aws.cloudformation.deploy(self, "CDN")
+
+        # Wait for the deployment to finish
+        if wait:
+            print("Waiting for the deployment to finish")
+            commons.aws.cloudformation.deploy_wait(self)
 
         # Deletes the session
         del self.aws
