@@ -2,86 +2,55 @@ import os
 import time
 import json
 import boto3
-import hashlib
 
 from importlib.resources import files
-from botocore.exceptions import ClientError
-
-in_progress_statuses = [
-    "CREATE_IN_PROGRESS",
-    "ROLLBACK_IN_PROGRESS",
-    "DELETE_IN_PROGRESS",
-    "UPDATE_IN_PROGRESS",
-    "UPDATE_ROLLBACK_IN_PROGRESS",
-    "REVIEW_IN_PROGRESS",
-    "IMPORT_IN_PROGRESS",
-    "IMPORT_ROLLBACK_IN_PROGRESS",
-]
-
-# Successful statuses
-successful_statuses = [
-    "CREATE_COMPLETE",
-    "DELETE_COMPLETE",
-    "UPDATE_COMPLETE",
-    "UPDATE_ROLLBACK_COMPLETE",
-    "IMPORT_COMPLETE",
-    "IMPORT_ROLLBACK_COMPLETE",
-]
-
-# Failed statuses
-failed_statuses = [
-    "CREATE_FAILED",
-    "ROLLBACK_FAILED",
-    "DELETE_FAILED",
-    "UPDATE_FAILED",
-    "UPDATE_ROLLBACK_FAILED",
-    "IMPORT_FAILED",
-    "IMPORT_ROLLBACK_FAILED",
-]
-
-# Rollback statuses
-rollback_statuses = [
-    "ROLLBACK_COMPLETE",
-    "UPDATE_ROLLBACK_COMPLETE",
-    "IMPORT_ROLLBACK_COMPLETE",
-]
-
-# Special cases
-special_cases = ["DELETE_IN_PROGRESS", "DELETE_COMPLETE", "DELETE_FAILED"]
-
-# Adding functions resources
-edge_functions = {
-    "viewer-request": {
-        "memory": 128,
-        "timeout": 5,
-        "runtime": "nodejs20.x",
-    },
-    "api-origin-request": {
-        "memory": 128,
-        "timeout": 5,
-        "runtime": "nodejs20.x",
-    },
-    "s3-origin-request": {
-        "memory": 128,
-        "timeout": 5,
-        "runtime": "nodejs20.x",
-    },
-    "api-origin-response": {
-        "memory": 128,
-        "timeout": 5,
-        "runtime": "nodejs20.x",
-    },
-}
+from tlaloc_commons import commons  # type: ignore
+from .edge_functions import edge_functions
 
 
 class builder:
+    """
+    This class is used to build and deploy a CDN
+
+    Parameters:
+        config (dict): A dictionary with the following parameters:
+            deployer (str): The name of the deployer
+            provider (str): The name of the provider if set to aws, the following parameters are required:
+
+                aws_profile (str): The name of the AWS profile to use
+                aws_stack (str): The name of the stack
+                aws_stack_hash (str): The hash of the stack
+                aws_region (str): The AWS region to use
+                aws_bucket (str): The name of the S3 bucket to use
+                aws_domain (str): The domain name to use
+                aws_hosted_zone_id (str): The hosted zone id to use
+                aws_origins (list): A list of origins to use
+
+    Raises:
+        ValueError: If the config parameter is not a dictionary
+        ValueError: If the config parameter does not have a deployer parameter
+        ValueError: If the config parameter does not have a provider parameter
+        ValueError: If the config parameter does not have a aws_profile parameter
+        ValueError: If the config parameter does not have a aws_stack parameter
+        ValueError: If the config parameter does not have a aws_stack_hash parameter
+        ValueError: If the config parameter does not have a aws_region parameter
+        ValueError: If the config parameter does not have a aws_bucket parameter
+        ValueError: If the config parameter does not have a aws_domain parameter
+        ValueError: If the config parameter does not have a aws_hosted_zone_id parameter
+        ValueError: If the config parameter does not have a aws_origins parameter
+        ValueError: If the aws_region parameter is not us-east-1
+        ValueError: If the provider parameter is not aws
+    """
 
     def __init__(self, config):
 
         # Initialize the config dictionary
         self.config = {}
+        self.built = False
+        self.deployed = False
 
         # Checking common config parameters #######################################
+
         # Checking if the config is a dictionary
         if not isinstance(config, dict):
             raise ValueError("Config must be a dictionary")
@@ -112,6 +81,7 @@ class builder:
         self.config["timestamp"] = int(time.time())
 
         # Checking the AWS deployment parameters ##################################
+
         if self.config["provider"] == "aws":
 
             # Checking the aws_profile parameter
@@ -135,9 +105,17 @@ class builder:
                     "Config must be a non empty string parameter aws_stack"
                 )
             self.config["aws_stack"] = config["aws_stack"]
-            self.config["aws_stack_hash"] = self._get_hash(
-                f"{self.config["deployer"]}/{self.config["aws_stack"]}"
-            )
+
+            # Checking the aws_stack parameter
+            if (
+                not config.get("aws_stack_hash")
+                or not isinstance(config["aws_stack_hash"], str)
+                or not config["aws_stack_hash"].strip()
+            ):
+                raise ValueError(
+                    "Config must be a non empty string parameter aws_stack_hash"
+                )
+            self.config["aws_stack_hash"] = config["aws_stack_hash"]
 
             # Checking the aws_region parameter
             if (
@@ -202,6 +180,43 @@ class builder:
             raise ValueError("Invalid provider")
 
     def build(self):
+        """
+        This function builds the CDN preparing the files
+
+        Parameters:
+            None
+
+        Returns:
+            None
+
+        Raises:
+            ValueError: If the provider is not supported
+        """
+
+        if self.config["provider"] == "aws":
+
+            self._aws_build()
+
+        else:
+
+            raise ValueError("Invalid provider")
+        
+        # Set the built flag to True
+        self.built = True
+
+    def _aws_build(self):
+        """
+        This function builds and AWS CDN preparing the files and the CloudFormation template
+
+        Parameters:
+            None
+
+        Returns:
+            None
+
+        Raises:
+            ValueError:
+        """
 
         # Initialization ##########################################################
 
@@ -212,40 +227,49 @@ class builder:
             )
         )
 
+        # Checking the number of default origins
+        default_origins = [
+            origin for origin in self.config["aws_origins"] if origin.get("default")
+        ]
+        if len(default_origins) != 1:
+            raise ValueError(
+                "Exactly one origin must have the 'default' flag set to true"
+            )
+
         # Delete and create temporal folder
         print("Creating temporal folder")
         os.system(f"rm -rf .CDN")
         os.makedirs(".CDN", exist_ok=True)
 
-        # Creating stack
-        stack = {
+        # Creating base template
+        template = {
             "AWSTemplateFormatVersion": "2010-09-09",
             "Parameters": {
                 "parTablePermissions": {
                     "Type": "String",
-                    "Default": "mytable",
+                    "Default": "my_table",
                 },
                 "parQueueAccessLog": {
                     "Type": "String",
-                    "Default": "myqueue",
+                    "Default": "my_queue",
                 },
                 "parUserPoolId": {
                     "Type": "String",
-                    "Default": "mypool",
+                    "Default": "my_pool",
                 },
             },
             "Resources": {},
             "Outputs": {},
         }
 
-        # Functions ##############################################################
+        # Building Functions ######################################################
 
         for function in edge_functions:
 
             # Calculating function variable values
             edge_functions[function]["name"] = function
             function = edge_functions[function]
-            function_hash = self._get_hash(
+            function_hash = commons.get_hash(
                 f"{self.config["aws_stack"]}-{function["name"]}"
             )
             function["path_sources"] = files("tlaloc_cdn_builder.functions").joinpath(
@@ -284,7 +308,7 @@ class builder:
 
             # Adding function resource
             print(f"{function["name"]} - Adding function resource")
-            stack["Resources"][f"{function_hash}Function"] = {
+            template["Resources"][f"{function_hash}Function"] = {
                 "Type": "AWS::Lambda::Function",
                 "Properties": {
                     "FunctionName": f"{function_hash}-{function["name"]}",
@@ -302,11 +326,11 @@ class builder:
 
             # Adding function role resource
             print(f"{function["name"]} - Adding role resource")
-            stack["Resources"][f"{function_hash}FunctionRole"] = role
+            template["Resources"][f"{function_hash}FunctionRole"] = role
 
             # Adding function version resource
             print(f"{function["name"]} - Adding version resource")
-            stack["Resources"][
+            template["Resources"][
                 f"{function_hash}FunctionVersion{function_timestamp}"
             ] = {
                 "Type": "AWS::Lambda::Version",
@@ -318,10 +342,10 @@ class builder:
             }
             function["version"] = f"{function_hash}FunctionVersion{function_timestamp}"
 
-        # Distribution ############################################################
+        # Building Distribution ###################################################
 
         # Adding domain certificate resource
-        stack["Resources"]["domainCertificate"] = {
+        template["Resources"]["domainCertificate"] = {
             "Type": "AWS::CertificateManager::Certificate",
             "Properties": {
                 "DomainName": self.config["aws_domain"],
@@ -336,7 +360,7 @@ class builder:
         }
 
         # Adding logs bucket
-        stack["Resources"]["bucketCloudFrontLogs"] = {
+        template["Resources"]["bucketCloudFrontLogs"] = {
             "Type": "AWS::S3::Bucket",
             "Properties": {
                 "BucketName": f"{self.config["aws_stack"]}-cloudfront-logs",
@@ -347,7 +371,7 @@ class builder:
         }
 
         # Adding policy for logs bucket
-        stack["Resources"]["bucketCloudFrontLogsPolicy"] = {
+        template["Resources"]["bucketCloudFrontLogsPolicy"] = {
             "Type": "AWS::S3::BucketPolicy",
             "Properties": {
                 "Bucket": {"Ref": "bucketCloudFrontLogs"},
@@ -361,17 +385,18 @@ class builder:
                             "Condition": {
                                 "StringEquals": {
                                     "AWS:SourceArn": {
-                                        "Fn::Sub": "arn:aws:cloudfront::${AWS::AccountId}:distribution/asdf"
+                                        "Fn::Sub": "arn:aws:cloudfront::${AWS::AccountId}:distribution/${cloudFrontDistribution}"
                                     }
                                 }
-                            },  # ${cloudFrontDistribution}"
+                            },
                         }
                     ]
                 },
             },
         }
 
-        stack["Resources"]["cloudFrontDistribution"] = {
+        # Adding distribution resource
+        template["Resources"]["cloudFrontDistribution"] = {
             "Type": "AWS::CloudFront::Distribution",
             "DependsOn": ["bucketCloudFrontLogs"],
             "Properties": {
@@ -399,7 +424,8 @@ class builder:
             },
         }
 
-        stack["Resources"]["cloudFrontOriginAccessControl"] = {
+        # Adding origin access control resource for s3 origins
+        template["Resources"]["cloudFrontOriginAccessControl"] = {
             "Type": "AWS::CloudFront::OriginAccessControl",
             "Properties": {
                 "OriginAccessControlConfig": {
@@ -411,7 +437,8 @@ class builder:
             },
         }
 
-        stack["Resources"]["cloudFrontDistributionDNSRecord"] = {
+        # Adding DNS record for distribution
+        template["Resources"]["cloudFrontDistributionDNSRecord"] = {
             "Type": "AWS::Route53::RecordSet",
             "Properties": {
                 "HostedZoneId": self.config["aws_hosted_zone_id"],
@@ -424,14 +451,15 @@ class builder:
             },
         }
 
-        # Origins #################################################################
+        # Building Origins ########################################################
 
         origin_id = 0
         for origin in self.config["aws_origins"]:
 
+            # Adding origin resources of type s3
             if origin["type"] == "s3":
                 if origin["owner"] == "self":
-                    stack["Resources"][f"distributionOrigin{origin_id:03}Bucket"] = {
+                    template["Resources"][f"distributionOrigin{origin_id:03}Bucket"] = {
                         "Type": "AWS::S3::Bucket",
                         "Properties": {
                             "BucketName": {
@@ -439,7 +467,7 @@ class builder:
                             }
                         },
                     }
-                    stack["Resources"][
+                    template["Resources"][
                         f"distributionOrigin{origin_id:03}BucketPolicy"
                     ] = {
                         "Type": "AWS::S3::BucketPolicy",
@@ -470,7 +498,7 @@ class builder:
                             },
                         },
                     }
-                    stack["Resources"]["cloudFrontDistribution"]["Properties"][
+                    template["Resources"]["cloudFrontDistribution"]["Properties"][
                         "DistributionConfig"
                     ]["Origins"].append(
                         {
@@ -487,13 +515,15 @@ class builder:
                             },
                         }
                     )
-                    stack["Resources"]["cloudFrontDistribution"]["DependsOn"].append(
+                    template["Resources"]["cloudFrontDistribution"]["DependsOn"].append(
                         f"distributionOrigin{origin_id:03}Bucket"
                     )
                 else:
                     raise ValueError("Invalid origin owner")
+
+            # Adding origin resources of type apigateway
             elif origin["type"] == "apigateway":
-                stack["Resources"]["cloudFrontDistribution"]["Properties"][
+                template["Resources"]["cloudFrontDistribution"]["Properties"][
                     "DistributionConfig"
                 ]["Origins"].append(
                     {
@@ -506,7 +536,7 @@ class builder:
                         },
                     }
                 )
-                stack["Resources"]["cloudFrontDistribution"]["Properties"][
+                template["Resources"]["cloudFrontDistribution"]["Properties"][
                     "DistributionConfig"
                 ]["CacheBehaviors"].append(
                     {
@@ -550,9 +580,10 @@ class builder:
                     }
                 )
 
+            # Adding default cache behavior
             if "default" in origin and origin["default"]:
                 if origin["type"] == "s3":
-                    stack["Resources"]["cloudFrontDistribution"]["Properties"][
+                    template["Resources"]["cloudFrontDistribution"]["Properties"][
                         "DistributionConfig"
                     ]["DefaultCacheBehavior"] = {
                         "TargetOriginId": f"distributionOrigin{origin_id:03}Bucket",
@@ -580,36 +611,96 @@ class builder:
                             },
                         ],
                     }
+                else:
+                    raise ValueError("Invalid origin type for default origin")
+
             origin_id += 1
 
-        # Dump ####################################################################
+        # Creating the template file ##############################################
 
         # Save stack
-        print("Saving stack")
-        with open(
-            f".CDN/{self.config["aws_stack"]}-{self.config["timestamp"]}.json", "w"
-        ) as file:
-            file.write(json.dumps(stack, indent=4))
+        print("Saving template")
+        json.dump(
+            template,
+            indent=4,
+            sort_keys=True,
+            fp=open(
+                f".CDN/{self.config["timestamp"]}-{self.config["aws_stack_hash"]}.json",
+                "w",
+            ),
+        )
 
     def deploy(self):
+        """
+        This function deploys the CDN using the provider specified in the config
 
-        # Setting the profile and oppening s3 client
+        Parameters:
+            None
+
+        Returns:
+            None
+        
+        Raises:
+            ValueError: If the CDN has not been built
+            ValueError: If the provider is not supported
+        """
+
+        if not self.built:
+
+            raise ValueError("You must build the CDN before deploying it")
+
+        if self.config["provider"] == "aws":
+
+            self._aws_deploy()
+
+        else:
+
+            raise ValueError("Invalid provider")
+        
+        # Set the deployed flag to True
+        self.deployed = True
+
+    def _aws_deploy(self):
+        """
+        This function deploys an AWS CDN using the CloudFormation template and files created by build
+
+        Parameters:
+            None
+        
+        Returns:
+            None
+        """
+
+        # Setting the profile and opening s3 client
         self.aws = boto3.Session(profile_name=self.config["aws_profile"])
 
         # Uploading files to S3
         print("Uploading files to S3")
-        self._upload_files_to_s3("us-east-1")
+        self._aws_upload()
 
         # Deploying stack
         print("Deploying stack")
-        self._deploy_cloudformation("us-east-1")
+        print(json.dumps(self.config, indent=4))
+        commons.aws.cloudformation.deploy(self, "CDN")
 
+        # Deletes the session
         del self.aws
 
-    def _upload_files_to_s3(self, region):
+    def _aws_upload(self):
+        """
+        This function uploads the required files to the S3 bucket
 
+        Parameters:
+            None
+        
+        Returns:
+            None
+        """
+
+        # Creating the s3 client
         s3_client = self.aws.client("s3")
 
+        # Uploading files
         print(f"Uploading files")
         for file in os.listdir(f".CDN/"):
             print(f"Uploading {file}")
@@ -619,76 +710,5 @@ class builder:
                 f"CDN/{file}",
             )
 
+        # Closing the s3 client
         s3_client.close()
-
-    def _deploy_cloudformation(self, region):
-
-        # Create the CloudFormation client
-        self.cloudformation_client = self.aws.client(
-            "cloudformation", region_name=region
-        )
-
-        # Check the aws_stack status
-        aws_stack_status = self._check_aws_stack(self.config["aws_stack"])
-        print(f"Stack status: {aws_stack_status}")
-
-        # Handle the aws_stack
-        aws_bucket = self.config["aws_bucket"]
-        if aws_stack_status == "DOES_NOT_EXIST":
-            print("Creating aws_stack")
-            self.cloudformation_client.create_stack(
-                StackName=self.config["aws_stack"],
-                TemplateURL=f"https://{aws_bucket}.s3.amazonaws.com/CDN/{self.config["aws_stack"]}-{self.config["timestamp"]}.json",
-                Capabilities=["CAPABILITY_NAMED_IAM", "CAPABILITY_AUTO_EXPAND"],
-            )
-        elif aws_stack_status in successful_statuses:
-            try:
-                print("Updating aws_stack")
-                self.cloudformation_client.update_stack(
-                    StackName=self.config["aws_stack"],
-                    TemplateURL=f"https://{aws_bucket}.s3.amazonaws.com/CDN/{self.config["aws_stack"]}-{self.config["timestamp"]}.json",
-                    Capabilities=["CAPABILITY_NAMED_IAM", "CAPABILITY_AUTO_EXPAND"],
-                )
-            except ClientError as e:
-                if "No updates are to be performed" in str(e):
-                    print("No updates detected. Skipping stack update.")
-                else:
-                    raise
-        elif (
-            aws_stack_status in failed_statuses or aws_stack_status in rollback_statuses
-        ):
-            print("Handling failed aws_stack")
-            self.cloudformation_client.delete_stack(StackName=self.config["aws_stack"])
-            waiter = self.cloudformation_client.get_waiter("stack_delete_complete")
-            waiter.wait(
-                StackName=self.config["aws_stack"],
-                WaiterConfig={
-                    "Delay": 1,  # Check every 1 seconds
-                    "MaxAttempts": 120,  # Retry up to 120 times
-                },
-            )
-            print("Creating aws_stack")
-            self.cloudformation_client.create_stack(
-                StackName=self.config["aws_stack"],
-                TemplateURL=f"https://{aws_bucket}.s3.amazonaws.com/CDN/{self.config["aws_stack"]}-{self.config["timestamp"]}.json",
-                Capabilities=["CAPABILITY_NAMED_IAM", "CAPABILITY_AUTO_EXPAND"],
-            )
-        elif aws_stack_status in in_progress_statuses:
-            raise ValueError("Stack is in progress")
-
-        # Close the CloudFormation client
-        self.cloudformation_client.close()
-
-    def _get_hash(self, string):
-        return hashlib.md5(string.encode()).hexdigest()
-
-    def _check_aws_stack(self, name):
-
-        try:
-            response = self.cloudformation_client.describe_stacks(StackName=name)
-            return response.get("Stacks")[0].get("StackStatus")
-        except ClientError as e:
-            if "does not exist" in str(e):
-                return "DOES_NOT_EXIST"
-            else:
-                raise
