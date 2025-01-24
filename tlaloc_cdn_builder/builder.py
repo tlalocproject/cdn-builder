@@ -200,7 +200,7 @@ class builder:
         else:
 
             raise ValueError("Invalid provider")
-        
+
         # Set the built flag to True
         self.built = True
 
@@ -639,7 +639,7 @@ class builder:
 
         Returns:
             None
-        
+
         Raises:
             ValueError: If the CDN has not been built
             ValueError: If the provider is not supported
@@ -656,7 +656,7 @@ class builder:
         else:
 
             raise ValueError("Invalid provider")
-        
+
         # Set the deployed flag to True
         self.deployed = True
 
@@ -666,7 +666,7 @@ class builder:
 
         Parameters:
             None
-        
+
         Returns:
             None
         """
@@ -692,7 +692,7 @@ class builder:
 
         Parameters:
             None
-        
+
         Returns:
             None
         """
