@@ -276,7 +276,9 @@ class builder:
             function["path_sources"] = files("tlaloc_cdn_builder.functions").joinpath(
                 function["name"]
             )
-            function_timestamp = int(os.path.getmtime(f'{function["path_sources"]}/index.mjs'))
+            function_timestamp = int(
+                os.path.getmtime(f'{function["path_sources"]}/index.mjs')
+            )
             function["path_temporal"] = f".CDN/{function_hash}"
             role = json.load(open(os.path.join(function["path_sources"], "role.json")))
 
@@ -462,11 +464,7 @@ class builder:
                 if "owner" in origin and origin["owner"] == "self":
                     template["Resources"][f"distributionOrigin{origin_id:03}Bucket"] = {
                         "Type": "AWS::S3::Bucket",
-                        "Properties": {
-                            "BucketName": {
-                                "Fn::Sub": origin["name"],
-                            }
-                        },
+                        "Properties": {"BucketName": origin["name"]},
                     }
                     template["Resources"][
                         f"distributionOrigin{origin_id:03}BucketPolicy"
@@ -505,7 +503,7 @@ class builder:
                         {
                             "Id": f"distributionOrigin{origin_id:03}Bucket",
                             "DomainName": {
-                                "Fn::Sub": [
+                                "Fn::GetAtt": [
                                     f"distributionOrigin{origin_id:03}Bucket",
                                     "RegionalDomainName",
                                 ]
@@ -604,13 +602,13 @@ class builder:
                         "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
                         "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
                         "LambdaFunctionAssociations": [
-                        #     {
-                        #         "EventType": "viewer-request",
-                        #         "LambdaFunctionARN": {
-                        #             "Fn::Sub": f'${{{edge_functions["viewer-request"]["version"]}.FunctionArn}}'
-                        #         },
-                        #         "IncludeBody": True,
-                        #     },
+                            #     {
+                            #         "EventType": "viewer-request",
+                            #         "LambdaFunctionARN": {
+                            #             "Fn::Sub": f'${{{edge_functions["viewer-request"]["version"]}.FunctionArn}}'
+                            #         },
+                            #         "IncludeBody": True,
+                            #     },
                             {
                                 "EventType": "origin-request",
                                 "LambdaFunctionARN": {
