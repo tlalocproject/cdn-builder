@@ -174,6 +174,7 @@ class builder:
                     "Config must be a non empty list parameter aws_origins"
                 )
             self.config["aws_origins"] = config["aws_origins"]
+            self.config["aws_folder"] = "CDN"
 
         else:
 
@@ -275,7 +276,7 @@ class builder:
             function["path_sources"] = files("tlaloc_cdn_builder.functions").joinpath(
                 function["name"]
             )
-            function_timestamp = int(os.path.getmtime(function["path_sources"]))
+            function_timestamp = int(os.path.getmtime(f'{function["path_sources"]}/index.mjs'))
             function["path_temporal"] = f".CDN/{function_hash}"
             role = json.load(open(os.path.join(function["path_sources"], "role.json")))
 
@@ -299,7 +300,7 @@ class builder:
             # Zipping the source code
             print(f"{function["name"]} - Zipping the source code")
             os.system(
-                f"zip -r .CDN/{self.config["aws_stack"]}-{function_hash}-{function_timestamp}.zip {function["path_temporal"]}/* > /dev/null"
+                f"cd {function['path_temporal']} && zip -r ../../.CDN/{function_timestamp}-{function_hash}-{self.config['aws_region']}.zip . > /dev/null"
             )
 
             # Deleting source folder
@@ -319,7 +320,7 @@ class builder:
                     "MemorySize": function["memory"],
                     "Code": {
                         "S3Bucket": self.config["aws_bucket"],
-                        "S3Key": f"CDN/{self.config["aws_stack"]}-{function_hash}-{function_timestamp}.zip",
+                        "S3Key": f"CDN/{function_timestamp}-{function_hash}-{self.config["aws_region"]}.zip",
                     },
                 },
             }
@@ -363,7 +364,7 @@ class builder:
         template["Resources"]["bucketCloudFrontLogs"] = {
             "Type": "AWS::S3::Bucket",
             "Properties": {
-                "BucketName": f"{self.config["aws_stack"]}-cloudfront-logs",
+                "BucketName": f"{self.config["deployer"]}-weelock-cloudfront-logs-{self.config["aws_region"]}",
                 "OwnershipControls": {
                     "Rules": [{"ObjectOwnership": "BucketOwnerPreferred"}]
                 },
@@ -458,7 +459,7 @@ class builder:
 
             # Adding origin resources of type s3
             if origin["type"] == "s3":
-                if origin["owner"] == "self":
+                if "owner" in origin and origin["owner"] == "self":
                     template["Resources"][f"distributionOrigin{origin_id:03}Bucket"] = {
                         "Type": "AWS::S3::Bucket",
                         "Properties": {
@@ -504,7 +505,7 @@ class builder:
                         {
                             "Id": f"distributionOrigin{origin_id:03}Bucket",
                             "DomainName": {
-                                "Fn::GetAtt": [
+                                "Fn::Sub": [
                                     f"distributionOrigin{origin_id:03}Bucket",
                                     "RegionalDomainName",
                                 ]
@@ -519,7 +520,18 @@ class builder:
                         f"distributionOrigin{origin_id:03}Bucket"
                     )
                 else:
-                    raise ValueError("Invalid origin owner")
+                    template["Resources"]["cloudFrontDistribution"]["Properties"][
+                        "DistributionConfig"
+                    ]["Origins"].append(
+                        {
+                            "Id": f"distributionOrigin{origin_id:03}Bucket",
+                            "DomainName": f"{origin["name"]}.s3.amazonaws.com",
+                            "S3OriginConfig": {"OriginAccessIdentity": ""},
+                            "OriginAccessControlId": {
+                                "Fn::GetAtt": ["cloudFrontOriginAccessControl", "Id"]
+                            },
+                        }
+                    )
 
             # Adding origin resources of type apigateway
             elif origin["type"] == "apigateway":
@@ -555,28 +567,28 @@ class builder:
                             "POST",
                             "DELETE",
                         ],
-                        "LambdaFunctionAssociations": [
-                            {
-                                "EventType": "viewer-request",
-                                "LambdaFunctionARN": {
-                                    "Fn::Sub": f'${{{edge_functions["viewer-request"]["version"]}.FunctionArn}}'
-                                },
-                                "IncludeBody": True,
-                            },
-                            {
-                                "EventType": "origin-request",
-                                "LambdaFunctionARN": {
-                                    "Fn::Sub": f'${{{edge_functions["api-origin-request"]["version"]}.FunctionArn}}'
-                                },
-                                "IncludeBody": True,
-                            },
-                            {
-                                "EventType": "origin-response",
-                                "LambdaFunctionARN": {
-                                    "Fn::Sub": f'${{{edge_functions["api-origin-response"]["version"]}.FunctionArn}}'
-                                },
-                            },
-                        ],
+                        # "LambdaFunctionAssociations": [
+                        #     {
+                        #         "EventType": "viewer-request",
+                        #         "LambdaFunctionARN": {
+                        #             "Fn::Sub": f'${{{edge_functions["viewer-request"]["version"]}.FunctionArn}}'
+                        #         },
+                        #         "IncludeBody": True,
+                        #     },
+                        #     {
+                        #         "EventType": "origin-request",
+                        #         "LambdaFunctionARN": {
+                        #             "Fn::Sub": f'${{{edge_functions["api-origin-request"]["version"]}.FunctionArn}}'
+                        #         },
+                        #         "IncludeBody": True,
+                        #     },
+                        #     {
+                        #         "EventType": "origin-response",
+                        #         "LambdaFunctionARN": {
+                        #             "Fn::Sub": f'${{{edge_functions["api-origin-response"]["version"]}.FunctionArn}}'
+                        #         },
+                        #     },
+                        # ],
                     }
                 )
 
@@ -592,13 +604,13 @@ class builder:
                         "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
                         "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac",
                         "LambdaFunctionAssociations": [
-                            {
-                                "EventType": "viewer-request",
-                                "LambdaFunctionARN": {
-                                    "Fn::Sub": f'${{{edge_functions["viewer-request"]["version"]}.FunctionArn}}'
-                                },
-                                "IncludeBody": True,
-                            },
+                        #     {
+                        #         "EventType": "viewer-request",
+                        #         "LambdaFunctionARN": {
+                        #             "Fn::Sub": f'${{{edge_functions["viewer-request"]["version"]}.FunctionArn}}'
+                        #         },
+                        #         "IncludeBody": True,
+                        #     },
                             {
                                 "EventType": "origin-request",
                                 "LambdaFunctionARN": {
@@ -616,6 +628,10 @@ class builder:
 
             origin_id += 1
 
+        template["Outputs"]["cloudFrontDistribution"] = {
+            "Value": {"Ref": "cloudFrontDistribution"},
+            "Export": {"Name": f"{self.config["deployer"]}-cloudFrontDistribution"},
+        }
         # Creating the template file ##############################################
 
         # Save stack
@@ -625,9 +641,13 @@ class builder:
             indent=4,
             sort_keys=True,
             fp=open(
-                f".CDN/{self.config["timestamp"]}-{self.config["aws_stack_hash"]}.json",
+                f".CDN/{self.config["timestamp"]}-{self.config["aws_stack_hash"]}-{self.config["aws_region"]}.json",
                 "w",
             ),
+        )
+
+        self.config["aws_template_file"] = (
+            f"{self.config["timestamp"]}-{self.config["aws_stack_hash"]}-{self.config["aws_region"]}.json"
         )
 
     def deploy(self, wait=False):
@@ -681,7 +701,7 @@ class builder:
         # Deploying stack
         print("Deploying stack")
         print(json.dumps(self.config, indent=4))
-        commons.aws.cloudformation.deploy(self, "CDN")
+        commons.aws.cloudformation.deploy(self, capabilities=["CAPABILITY_IAM"])
 
         # Wait for the deployment to finish
         if wait:
@@ -708,12 +728,20 @@ class builder:
         # Uploading files
         print(f"Uploading files")
         for file in os.listdir(f".CDN/"):
-            print(f"Uploading {file}")
-            s3_client.upload_file(
-                f".CDN/{file}",
-                self.config["aws_bucket"],
-                f"CDN/{file}",
-            )
+            if file.endswith(".zip"):
+                print(f"Uploading {file}")
+                s3_client.upload_file(
+                    f".CDN/{file}",
+                    self.config["aws_bucket"],
+                    f"CDN/{file}",
+                )
+
+        # Upload the API template to S3
+        s3_client.upload_file(
+            f".CDN/{self.config["timestamp"]}-{self.config["aws_stack_hash"]}-{self.config["aws_region"]}.json",
+            self.config["aws_bucket"],
+            f"CDN/{self.config["timestamp"]}-{self.config["aws_stack_hash"]}-{self.config["aws_region"]}.json",
+        )
 
         # Closing the s3 client
         s3_client.close()
