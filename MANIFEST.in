@@ -1,1 +1,1 @@
-include tlaloc_cdn_builder/functions/*
+recursive-include tlaloc_cdn_builder/functions/*
