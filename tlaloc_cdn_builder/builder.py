@@ -268,7 +268,7 @@ class builder:
         for function in edge_functions:
 
             print(f"Listing files in {os.path.dirname(os.path.abspath(__file__))}")
-            os.system(f"ls -la {os.path.dirname(os.path.abspath(__file__))}")
+            os.system(f"ls -la {os.path.dirname(os.path.abspath(__file__))}/functions/")
 
             # Calculating function variable values
             edge_functions[function]["name"] = function
