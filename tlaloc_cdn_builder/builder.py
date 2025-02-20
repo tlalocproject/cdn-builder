@@ -273,7 +273,12 @@ class builder:
             function_hash = commons.get_hash(
                 f"{self.config["aws_stack"]}-{function["name"]}"
             )
-            function["path_sources"] = os.path.join(os.path.dirname(os.path.abspath(__file__)), "functions", function["name"])
+            function["path_sources"] = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "tlaloc_cdn_builder",
+                "functions",
+                function["name"],
+            )
             function_timestamp = int(
                 os.path.getmtime(f'{function["path_sources"]}/index.mjs')
             )
