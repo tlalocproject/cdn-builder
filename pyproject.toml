@@ -12,4 +12,4 @@ build-backend = "setuptools.build_meta"
 packages = ["tlaloc_cdn_builder"]
 
 [tool.setuptools.package-data]
-tlaloc_cdn_builder = ["functions/*"]
+tlaloc_cdn_builder = ["functions/**/*"]
