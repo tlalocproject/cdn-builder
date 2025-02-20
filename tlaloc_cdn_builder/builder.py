@@ -314,7 +314,7 @@ class builder:
             template["Resources"][f"{function_hash}Function"] = {
                 "Type": "AWS::Lambda::Function",
                 "Properties": {
-                    "FunctionName": f"{function_hash}-{function["name"]}",
+                    "FunctionName": f"{self.config["deployer"]}-{function_hash}-{function["name"]}",
                     "Handler": "index.handler",
                     "Role": {"Fn::GetAtt": [f"{function_hash}FunctionRole", "Arn"]},
                     "Runtime": function["runtime"],
