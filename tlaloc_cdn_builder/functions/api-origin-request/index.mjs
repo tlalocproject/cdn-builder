@@ -14,10 +14,10 @@ const sqsClient = new SQSClient({ region: 'sa-east-1' });
 
 // Default api version for when weelockAuthentication does not have the information
 const apiVersionDefault = {
-    'api_admin_version': 'V000000',
-    'api_profile_version': 'V000000',
-    'api_service_version': 'V000000',
-    'api_user_version': 'V000000',
+    'api_admin_version': 'S000000',
+    'api_profile_version': 'S000000',
+    'api_service_version': 'S000000',
+    'api_user_version': 'S000000',
 };
 
 const dynamoClient = new DynamoDBClient({ region: 'sa-east-1' });
