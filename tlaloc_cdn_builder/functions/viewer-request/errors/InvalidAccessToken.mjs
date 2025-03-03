@@ -5,7 +5,7 @@ export class InvalidAccessToken extends Error {
         this.name = 'InvalidAccessToken';
         this.response = {
             headers: {
-                //// IF make_type per
+                //// IF type branch
                 'Access-Control-Allow-Headers': [{
                     key: 'Access-Control-Allow-Headers',
                     value: '*',
