@@ -565,28 +565,28 @@ class builder:
                             "POST",
                             "DELETE",
                         ],
-                        # "LambdaFunctionAssociations": [
-                        #     {
-                        #         "EventType": "viewer-request",
-                        #         "LambdaFunctionARN": {
-                        #             "Fn::Sub": f'${{{edge_functions["viewer-request"]["version"]}.FunctionArn}}'
-                        #         },
-                        #         "IncludeBody": True,
-                        #     },
-                        #     {
-                        #         "EventType": "origin-request",
-                        #         "LambdaFunctionARN": {
-                        #             "Fn::Sub": f'${{{edge_functions["api-origin-request"]["version"]}.FunctionArn}}'
-                        #         },
-                        #         "IncludeBody": True,
-                        #     },
-                        #     {
-                        #         "EventType": "origin-response",
-                        #         "LambdaFunctionARN": {
-                        #             "Fn::Sub": f'${{{edge_functions["api-origin-response"]["version"]}.FunctionArn}}'
-                        #         },
-                        #     },
-                        # ],
+                        "LambdaFunctionAssociations": [
+                            {
+                                "EventType": "viewer-request",
+                                "LambdaFunctionARN": {
+                                    "Fn::Sub": f'${{{edge_functions["viewer-request"]["version"]}.FunctionArn}}'
+                                },
+                                "IncludeBody": True,
+                            },
+                            {
+                                "EventType": "origin-request",
+                                "LambdaFunctionARN": {
+                                    "Fn::Sub": f'${{{edge_functions["api-origin-request"]["version"]}.FunctionArn}}'
+                                },
+                                "IncludeBody": True,
+                            },
+                            {
+                                "EventType": "origin-response",
+                                "LambdaFunctionARN": {
+                                    "Fn::Sub": f'${{{edge_functions["api-origin-response"]["version"]}.FunctionArn}}'
+                                },
+                            },
+                        ],
                     }
                 )
 
