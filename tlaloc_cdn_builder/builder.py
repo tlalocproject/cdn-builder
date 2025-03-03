@@ -343,6 +343,18 @@ class builder:
             if return_value != 0:
                 raise ValueError(f"Error building {function["name"]} function")
 
+            # Cleaning up mjs files
+            print(f"{function["name"]} - Cleaning up mjs files")
+            for file in os.listdir(function["path_temporal"]):
+                if file.endswith(".mjs"):
+                    self._clean_mjs(f"{function["path_temporal"]}/{file}")
+
+            # Replacing variables in mjs files
+            print(f"{function["name"]} - Replacing variables in mjs files")
+            for file in os.listdir(function["path_temporal"]):
+                if file.endswith(".mjs"):
+                    self._replace_mjs(f"{function["path_temporal"]}/{file}")
+
             # Cleaning up folder
             print(f"{function["name"]} - Cleaning up folder")
             os.system(f"rm -rf {function["path_temporal"]}/package*")
@@ -791,3 +803,53 @@ class builder:
 
         # Closing the s3 client
         s3_client.close()
+
+    def _clean_mjs(self, file_path):
+
+        # Initialize the file_clean string and the rules list
+        file_clean = ""
+        rules = []
+
+        # Read the file and apply the rules
+        with open(file_path, "r") as f:
+            for line in f:
+                line_strip = line.strip()
+                if line_strip.startswith("//// IF"):
+                    line_split = line_strip.split(" ")
+                    rule = [line_split[2], "==", line_split[3]]
+                    if rule in rules:
+                        raise ValueError("Rule is already in use")
+                    rules.append(rule)
+                elif line_strip.startswith("//// ENDIF"):
+                    if len(rules) == 0:
+                        raise ValueError("No rule to close")
+                    rules.pop()
+                else:
+                    write = True
+                    for rule in rules:
+                        if rule[1] == "==" and self.config[rule[0]] == rule[2]:
+                            continue
+                        else:
+                            write = False
+                            break
+                    if write:
+                        file_clean += line
+
+        # Write the cleaned file
+        with open(file_path, "w") as f:
+            f.write(file_clean)
+
+    def _replace_mjs(self, file_path):
+
+        # Read the file and apply the rules
+        with open(file_path, "r") as f:
+            file_content = f.read()
+
+        # Replace the variables
+        for key in self.config:
+            print(key, self.config[key])
+            file_content = file_content.replace(f"<<<{key}>>>", str(self.config[key]))
+
+        # Write the cleaned file
+        with open(file_path, "w") as f:
+            f.write(file_content)
