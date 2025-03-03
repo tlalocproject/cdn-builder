@@ -66,6 +66,17 @@ class builder:
             )
         self.config["deployer"] = config["deployer"]
 
+        # Checking the type parameter
+        if (
+            not config.get("type")
+            or not isinstance(config["type"], str)
+            or not config["type"].strip()
+        ):
+            raise ValueError(
+                "Config must have a non empty string parameter named type"
+            )
+        self.config["type"] = config["type"]
+
         # Checking the provider parameter
         if (
             not config.get("provider")
@@ -173,8 +184,45 @@ class builder:
                 raise ValueError(
                     "Config must be a non empty list parameter aws_origins"
                 )
+
+            # Checking the aws_user_pool_client_id parameter
+            if (
+                not config.get("aws_user_pool_client_id")
+                or not isinstance(config["aws_user_pool_client_id"], str)
+                or not config["aws_user_pool_client_id"].strip()
+            ):
+                raise ValueError(
+                    "Config must be a non empty string parameter aws_user_pool_client_id"
+                )
+            self.config["aws_user_pool_client_id"] = config["aws_user_pool_client_id"]
+
+            # Checking the aws_user_pool_id parameter
+            if (
+                not config.get("aws_user_pool_id")
+                or not isinstance(config["aws_user_pool_id"], str)
+                or not config["aws_user_pool_id"].strip()
+            ):
+                raise ValueError(
+                    "Config must be a non empty string parameter aws_user_pool_id"
+                )
+            self.config["aws_user_pool_id"] = config["aws_user_pool_id"]
+
+            # Checking the aws_account_id parameter
+            if (
+                not config.get("aws_account_id")
+                or not isinstance(config["aws_account_id"], str)
+                or not config["aws_account_id"].strip()
+            ):
+                raise ValueError(
+                    "Config must be a non empty string parameter aws_account_id"
+                )
+            self.config["aws_account_id"] = config["aws_account_id"]
+            
+            # Fixed
             self.config["aws_origins"] = config["aws_origins"]
             self.config["aws_folder"] = "CDN"
+            self.config["aws_table_permissions"] = f"{self.config["deployer"]}-tlaloc-{self.config["aws_region"]}-permissions"
+            self.config["aws_table_access"] = f"{self.config["deployer"]}-tlaloc-{self.config["aws_region"]}-access"
 
         else:
 
