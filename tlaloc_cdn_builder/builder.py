@@ -847,7 +847,6 @@ class builder:
 
         # Replace the variables
         for key in self.config:
-            print(key, self.config[key])
             file_content = file_content.replace(f"<<<{key}>>>", str(self.config[key]))
 
         # Write the cleaned file
