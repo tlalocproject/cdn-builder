@@ -221,8 +221,8 @@ class builder:
             # Fixed
             self.config["aws_origins"] = config["aws_origins"]
             self.config["aws_folder"] = "CDN"
-            self.config["aws_table_permissions"] = f"{self.config["deployer"]}-tlaloc-{self.config["aws_region"]}-permissions"
-            self.config["aws_table_access"] = f"{self.config["deployer"]}-tlaloc-{self.config["aws_region"]}-access"
+            self.config["aws_table_permissions"] = f"{self.config["deployer"]}-tlaloc-sa-east-1-permissions"
+            self.config["aws_table_access"] = f"{self.config["deployer"]}-tlaloc-sa-east-1-access"
 
         else:
 
@@ -296,7 +296,7 @@ class builder:
             "Parameters": {
                 "parTablePermissions": {
                     "Type": "String",
-                    "Default": "my_table",
+                    "Default": self.config["aws_table_permissions"],
                 },
                 "parQueueAccessLog": {
                     "Type": "String",
@@ -304,7 +304,7 @@ class builder:
                 },
                 "parUserPoolId": {
                     "Type": "String",
-                    "Default": "my_pool",
+                    "Default": self.config["aws_user_pool_id"],
                 },
             },
             "Resources": {},
